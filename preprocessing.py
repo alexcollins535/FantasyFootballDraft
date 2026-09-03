@@ -181,7 +181,9 @@ def generate_additional_data_json():
             'IsHelp': row['Helpx0.5'],
             'InjRisk': row['INJ Risk'],
             'ProjOut': row['ProjOut'],
-            'ProjPPR': row['ProjPPR']
+            'ProjPPR': row['ProjPPR'],
+            'MyRank': row['MyRank'],
+            'Injury': row['InjuryNote']
         }
 
     with open(ADDITIONAL_DATA_JSON, 'w') as f3:

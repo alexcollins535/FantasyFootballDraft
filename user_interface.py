@@ -1,16 +1,12 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 import threading
 import queue as q_module
-import random
-import pickle
 import os 
 import sys
 from datetime import datetime
 
-from globals import SEED, POS_LIST, FLEX_POSITIONS
-from draft_functionality import initialize_draft, run_simulation
-from infrastructure import DraftBlackboard
+from globals import POS_LIST, FLEX_POSITIONS
 
 
 class DraftBridge:
@@ -24,7 +20,7 @@ class DraftBridge:
 class LoadScreen(tk.Tk):
     def __init__(self, saved_dir: str, league: str, draft_type: str):
         super().__init__()
-        self.title('Fantasy Draft — Load')
+        self.title('Fantasy Draft -- Load')
         self.configure(bg=DraftApp.BG)
         self.resizable(True, True)
         self.selected_path: str | None = None
@@ -94,6 +90,15 @@ class LoadScreen(tk.Tk):
         draft_btn.pack(side='left')
         draft_btn.bind('<Button-1>', lambda e: self.draft_type_var.set(
             'all select' if self.draft_type_var.get() == 'mock draft' else 'mock draft'))
+
+        tk.Label(toggle_frame, text='AI Agent:', bg=DraftApp.BG, fg=DraftApp.FG_DIM,
+                font=DraftApp.FONT_STATUS).pack(side='left', padx=(0, 4))
+        self.ai_var = tk.StringVar(value='AI Off')
+        ai_btn = tk.Label(toggle_frame, textvariable=self.ai_var, bg=DraftApp.ACCENT, fg=DraftApp.FG,
+                        font=DraftApp.FONT_STATUS, padx=8, pady=3, cursor='hand2')
+        ai_btn.pack(side='left', padx=(0, 16))
+        ai_btn.bind('<Button-1>', lambda e: self.ai_var.set(
+            'AI Off' if self.ai_var.get() == 'AI On' else 'AI On'))
 
 
     def _on_close(self):
@@ -202,6 +207,8 @@ class DraftApp(tk.Tk):
         self._status_var = tk.StringVar(value='Initializing draft...')
         tk.Label(self, textvariable=self._status_var, bg=self.ACCENT, fg=self.FG, font=self.FONT_STATUS, anchor='w', padx=8, pady=3).pack(fill='x', padx=0)
 
+        self._build_agent_panel()
+
         # Main body: left = next-up table, right = my team
         body = tk.Frame(self, bg=self.BG)
         body.pack(fill='both', expand=True, padx=12, pady=6)
@@ -254,6 +261,21 @@ class DraftApp(tk.Tk):
         # Double-click to auto-fill pick entry
         self._next_tree.bind('<ButtonRelease-1>', self._on_row_click)
 
+        # Sorting state: (column, ascending)
+        self._sort_state: tuple[str, bool] = ('OVR_RK', True)
+
+        # Injury tooltip
+        self._injury_map: dict[str, str] = {}   # player name → note
+        self._tooltip = _Tooltip(self._next_tree)
+        self._next_tree.bind('<Motion>',    self._on_tree_motion)
+        self._next_tree.bind('<Leave>',     lambda e: self._tooltip.hide())
+
+        # Make each heading clickable for sorting
+        cols = self.COLS_SIM if self.simulation else self.COLS_BASE
+        for col in cols:
+            self._next_tree.heading(col, text=col,
+                                    command=lambda c=col: self._sort_by(c))
+            
 
     def _build_team_panel(self, parent):
         frame = tk.Frame(parent, bg=self.PANEL, bd=1, relief='flat')
@@ -351,6 +373,69 @@ class DraftApp(tk.Tk):
         self._pick_feedback.pack(side='left', padx=12)
 
 
+    def _build_agent_panel(self):
+        self._agent_frame = tk.Frame(self, bg=self.PANEL, pady=6)
+        self._agent_frame.pack(fill='x', padx=12, pady=(0, 4))
+
+        tk.Label(self._agent_frame, text='AGENT RECOMMENDATIONS',
+                bg=self.PANEL, fg=self.HIGHLIGHT, font=self.FONT_HEAD,
+                anchor='w', padx=8).pack(fill='x')
+
+        btn_row = tk.Frame(self._agent_frame, bg=self.PANEL)
+        btn_row.pack(fill='x', padx=8, pady=(4, 2))
+
+        # Three agent pick buttons
+        self._agent_btns = {}
+        for label in ('Logical', 'Probabilistic', 'Gemini'):
+            col_frame = tk.Frame(btn_row, bg=self.PANEL)
+            col_frame.pack(side='left', padx=(0, 12))
+
+            tk.Label(col_frame, text=label, bg=self.PANEL, fg=self.FG_DIM,
+                    font=self.FONT_STATUS).pack(anchor='w')
+
+            btn = tk.Button(col_frame, text='—', bg=self.ACCENT, fg=self.FG,
+                            font=self.FONT_STATUS, relief='flat', padx=8, pady=3,
+                            state='disabled', cursor='hand2',
+                            command=lambda l=label: self._agent_btn_click(l))
+            btn.pack(anchor='w')
+            self._agent_btns[label] = btn
+
+        # gemini reasoning
+        self._agent_reasoning_var = tk.StringVar(value='')
+        tk.Label(self._agent_frame, textvariable=self._agent_reasoning_var,
+                bg=self.PANEL, fg=self.FG_DIM, font=self.FONT_STATUS,
+                anchor='w', padx=8, wraplength=900, justify='left').pack(fill='x', pady=(2, 0))
+
+
+
+    def _show_agent_picks(self, payload: dict):
+        mapping = {
+            'Logical': payload.get('logical'),
+            'Probabilistic': payload.get('probabilistic'),
+            'Gemini': payload.get('gemini'),
+        }
+        for label, name in mapping.items():
+            btn = self._agent_btns[label]
+            if name:
+                btn.config(text=name, state='normal')
+            else:
+                btn.config(text='—', state='disabled')
+
+        self._agent_reasoning_var.set(payload.get('reasoning') or '')
+        
+        # Clear buttons when pick input is disabled
+        self._agent_picks_cache = mapping
+
+
+    def _agent_btn_click(self, label: str):
+        if not self._awaiting_input:
+            return
+        name = self._agent_picks_cache.get(label)
+        if name:
+            self._pick_var.set(name)
+            self._pick_entry.focus_set()
+
+
     def _submit_undo(self):
         if self._awaiting_input:
             self._disable_pick_input()
@@ -402,6 +487,9 @@ class DraftApp(tk.Tk):
                     self._team_tree.delete(*self._team_tree.get_children())
                     for pos, name in picks:
                         self._team_tree.insert('', 'end', values=(pos, name))
+
+                elif cmd == 'agent_picks':
+                    self._show_agent_picks(payload)
                                 
         except q_module.Empty:
             pass
@@ -424,6 +512,10 @@ class DraftApp(tk.Tk):
             pass
 
         active = self._active_pos_filter
+        col, asc = self._sort_state
+
+        # Filter first, then sort
+        filtered = []
         for player_name, info in next_up_dict.items():
             pos = info.get('POS', '')
             if active is not None:
@@ -432,10 +524,20 @@ class DraftApp(tk.Tk):
                         continue
                 elif pos != active:
                     continue
-
             if self._active_search_filter is not None:
                 if self._active_search_filter not in player_name.upper():
                     continue
+            filtered.append((player_name, info))
+
+        filtered.sort(key=lambda item: self._sort_key(item, col), reverse=not asc)
+
+        for player_name, info in filtered:
+            # Cache injury note for tooltip
+            inj = info.get('INJURY')
+            if inj and str(inj).strip() and str(inj).lower() not in ('nan', 'none', ''):
+                self._injury_map[player_name] = str(inj).strip()
+            else:
+                self._injury_map.pop(player_name, None)
 
             row = []
             for col in cols:
@@ -443,12 +545,15 @@ class DraftApp(tk.Tk):
                     val = player_name
                 elif col == 'B_NEXT':
                     count = info.get('count', 0)
-                    val = f"{round(count / n_sims * 100, 1)}%" if n_sims else str(count)
-                elif col not in info:
-                    val = 'N/A'
+                    if n_sims and count > 0:
+                        val = f"{round(count / n_sims * 100, 1)}%"
+                    else:
+                        val = 'N/A'
                 else:
-                    v = info[col]
-                    if isinstance(v, float):
+                    v = info.get(col)
+                    if v is None:
+                        val = 'N/A'
+                    elif isinstance(v, float):
                         if col in ('L_ISHELP', 'L_NHELP'):
                             val = f"{round(v * 100, 1)}%"
                         else:
@@ -510,6 +615,9 @@ class DraftApp(tk.Tk):
         self._awaiting_input = False
         self._pick_entry.config(state='disabled')
         self._pick_btn.config(state='disabled')
+        # Disable agent buttons until next pick
+        for btn in self._agent_btns.values():
+            btn.config(state='disabled')
 
  
     def _submit_pick(self):
@@ -597,226 +705,85 @@ class DraftApp(tk.Tk):
             self._render_next_up(self._last_next_up_dict)
 
 
-class DraftWorker:
-    def __init__(self, bridge: DraftBridge, app: DraftApp, league: str, user: str, draft_type: str, simulation: bool):
-        self.bridge = bridge
-        self.app = app
-        self.league = league
-        self.user = user
-        self.draft_type = draft_type
-        self.simulation = simulation
+    def _sort_by(self, col: str) -> None:
+        """Toggle sort direction on col; re-render from the cached dict."""
+        _, asc = self._sort_state
+        # Clicking the same column flips direction; new column resets to asc
+        new_asc = not asc if col == self._sort_state[0] else True
+        self._sort_state = (col, new_asc)
 
-        self._user_pick_count = 0
+        # Update heading arrows
+        cols = self.COLS_SIM if self.simulation else self.COLS_BASE
+        for c in cols:
+            arrow = ''
+            if c == col:
+                arrow = ' ▲' if new_asc else ' ▼'
+            self._next_tree.heading(c, text=c + arrow,
+                                    command=lambda _c=c: self._sort_by(_c))
+
+        if hasattr(self, '_last_next_up_dict'):
+            self._render_next_up(self._last_next_up_dict)
 
 
-    def push(self, cmd, payload=None):
-        self.bridge.ui_queue.put((cmd, payload))
+    def _sort_key(self, item: tuple[str, dict], col: str):
+        """Return a sort key for a (name, info) pair given column name."""
+        name, info = item
+        if col == 'NAME':
+            return name.upper()
+        if col == 'B_NEXT':
+            return info.get('count', 0)           # raw count, not formatted %
+
+        raw = info.get(col)
+        if raw is None:
+            return float('inf')                   # N/A goes to the end
+        if isinstance(raw, (int, float)):
+            return raw
+        # Try to parse strings like "12.3" or "45.6%"
+        try:
+            return float(str(raw).replace('%', ''))
+        except ValueError:
+            return str(raw).upper()
 
 
-    def _show_next_up(self, blackboard: DraftBlackboard):
-        # Replacement for print_next_up_players in UI workflow
-        if self.simulation and blackboard.current_pick_owner == self.user:
-            next_up_dict = run_simulation(blackboard)
+    def _on_tree_motion(self, event: tk.Event) -> None:
+        """Show tooltip when hovering over a NAME cell of a player with an injury note."""
+        item = self._next_tree.identify_row(event.y)
+        col  = self._next_tree.identify_column(event.x)
+        if not item or col != '#1':             # #1 = first visible column = NAME
+            self._tooltip.hide()
+            return
+
+        name = self._next_tree.item(item, 'values')
+        if not name:
+            self._tooltip.hide()
+            return
+        name = name[0]                          # first value is always NAME
+
+        note = self._injury_map.get(name)
+        if note and str(note).strip() and str(note).lower() not in ('nan', 'none', ''):
+            self._tooltip.show(f'🩹 {note}', event.x_root, event.y_root)
         else:
-            next_up_dict = {}
-            for player in blackboard.next_up_queue.heap:
-                next_up_dict[player.name] = {'POS': player.pos, 'TEAM': player.team, 'OVR_RK': player.ovr_rk}
-                if player.name in blackboard.additional_data_dict:
-                    d = blackboard.additional_data_dict[player.name]
-                    next_up_dict[player.name].update({
-                        'PROJ_AVG': d.get('ProjAvg'),
-                        'L_OUT': d.get('OutLast'),
-                        'L_ISHELP': d.get('IsHelp'),
-                        'L_NHELP': d.get('NeedHelp'),
-                        'OL_TIER': d.get('OLTier'),
-                        'INJ_RISK': d.get('InjRisk'),
-                        'PRJ_OUT': d.get('ProjOut'),
-                        'PRJ_PPR': d.get('ProjPPR')
-                    })
-        self.push('next_up', next_up_dict)
+            self._tooltip.hide()
 
 
-    def _ui_select_pick(self, blackboard: DraftBlackboard):
-        # Replacement for make_select_pick in UI workflow
-        owner = blackboard.current_pick_owner
-        rd = blackboard.current_round
-        pick = blackboard.current_pick_in_round
+class _Tooltip:
+    """Lightweight Toplevel tooltip that follows the mouse."""
+    def __init__(self, widget: tk.Widget):
+        self._widget = widget
+        self._tip: tk.Toplevel | None = None
 
-        while True:
-            self.bridge.pick_event.clear()
-            self.push('load_team', (owner, self.app._owner_teams.get(owner, [])))
-            self.push('my_pick', f"{rd}.{pick} Draft selection for {owner}: ")
-            self.bridge.pick_event.wait()
+    def show(self, text: str, x: int, y: int):
+        self.hide()
+        self._tip = tw = tk.Toplevel(self._widget)
+        tw.wm_overrideredirect(True)          # no title bar / borders
+        tw.wm_geometry(f'+{x + 16}+{y + 8}')
+        tk.Label(tw, text=text, justify='left',
+                 background='#ffffcc', foreground='#222222',
+                 relief='solid', borderwidth=1,
+                 font=('Consolas', 10), wraplength=320,
+                 padx=6, pady=4).pack()
 
-            if self.bridge.pending_undo:
-                self.bridge.pending_undo = False
-                return False
-
-            raw = (self.bridge.pending_pick or '').strip()
-            queue = blackboard.next_up_queue
-
-            if raw in queue.name_to_player_map:
-                player_obj = queue.name_to_player_map[raw]
-            else:
-                upper = raw.upper()
-                matches = [p.name for p in queue.heap if any(part in upper for part in p.name.upper().split()[:2])]
-                if len(matches) == 1:
-                    player_obj = queue.name_to_player_map[matches[0]]
-                elif matches:
-                    self.push('status', f'Multiple matches for "{raw}": {", ".join(matches[:5])}. Enter full name.')
-                    continue
-                else:
-                    self.push('status', f'No matches found for "{raw}".')
-                    continue
-
-            blackboard.draft_player(player_obj, print_picks=False)
-            if blackboard.in_progress:
-                blackboard.update_odds()
-            self.push('team_pick', (owner, player_obj.pos, player_obj.name))
-            if owner == self.user:
-                self._user_pick_count += 1
-                self.push('undo_enable')
-            self.push('status', f'Drafted: {player_obj.name}, {player_obj.pos}')
-            return True
-
-
-    def run(self, load_state: DraftBlackboard=None):
-        if load_state is None:
-            blackboard = initialize_draft(self.league, self.draft_type)
-        else:
-            blackboard = load_state
-            self._restore_ui_from_state(blackboard)
-
-        self.push('status', f'Draft started for {self.league}')
- 
-        while blackboard.in_progress:
-            # Keeper pick 
-            keeper_drafted = False
-            if blackboard.keepers is not None:
-                owner = blackboard.current_pick_owner
-                rd = blackboard.current_round
-                if blackboard.keepers[owner]['ROUND'] == rd:
-                    player_obj = blackboard.keepers[owner]['PLAYER_OBJ']
-                    blackboard.draft_player(player_obj, print_picks=False, keeper_pick=True)
-                    self.push('team_pick', (owner, player_obj.pos, player_obj.name))
-                    self.push('status', f'Keeper: {player_obj.name} ({player_obj.pos}) to {owner}')
-                    if blackboard.in_progress:
-                        blackboard.update_odds()
-                    keeper_drafted = True
- 
-            if keeper_drafted:
-                continue
- 
-            owner = blackboard.current_pick_owner
-            is_user_pick = (owner == self.user)
-            current_type = self.app.draft_type   # may have been toggled
- 
-            # User pick
-            if current_type == 'all select' or (current_type == 'mock draft' and is_user_pick):
-                if current_type == 'all select' or blackboard.current_round != blackboard.last_round:
-                    self._show_next_up(blackboard)
-                picked = self._ui_select_pick(blackboard)
-                if not picked:
-                    # Undo: rewind to previous user pick, rebuild team panel
-                    blackboard.go_back_to_last_user_pick(current_type)
-                    blackboard.update_odds()
-                    self._user_pick_count -= 1
-                    if self._user_pick_count == 0:
-                        self.push('undo_disable')
-                    updated_picks = [(blackboard.player_data_dict[p]['POS'], p) for p in blackboard.players_drafted_by_owner[self.user]]
-                    self.push('undo_team', (self.user, updated_picks))
-                    self._show_next_up(blackboard)
-                    continue
-
-                self._autosave(blackboard)
-            
-            # Random pick 
-            else:
-                blackboard.make_random_pick(print_picks=False)
-                drafted = blackboard.players_drafted_by_owner['LEAGUE'][-1]
-                # Already drafted needs handling for previous was last pick in round
-                if blackboard.current_pick_in_round == 1:
-                    last_pick = 12
-                    last_pick_rd = blackboard.current_round - 1
-                else:
-                    last_pick = blackboard.current_pick_in_round - 1
-                    last_pick_rd = blackboard.current_round
-
-                self.push('team_pick', (owner, drafted.pos, drafted.name))
-                self.push('status', f'Pick {last_pick_rd}.{last_pick}: {owner} drafts {drafted.name}, {drafted.pos}')
-                if blackboard.in_progress:
-                    blackboard.update_odds()
- 
-        # Draft over
-        results_lines = []
-        for owner, players in blackboard.players_drafted_by_owner.items():
-            if owner == 'LEAGUE':
-                continue
-            pos_map: dict[str, list] = {}
-            for p in dict.fromkeys(players):
-                pos = blackboard.player_data_dict[p]['POS']
-                pos_map.setdefault(pos, []).append(p)
-            results_lines.append(f'\n{owner}')
-            for pos in POS_LIST:
-                if pos in pos_map:
-                    results_lines.append(f'  {pos}: {", ".join(pos_map[pos])}')
- 
-        self.push('done', '\n'.join(results_lines))
-
-
-    def _autosave(self, blackboard: DraftBlackboard) -> None:
-        date_str = datetime.now().strftime('%Y%m%d')
-        path = os.path.join('saved_draft_states', f'{self.league}_{date_str}_autosave.pkl')
-        os.makedirs('saved_draft_states', exist_ok=True)
-        with open(path, 'wb') as f:
-            pickle.dump(blackboard, f)
-
-
-    def _restore_ui_from_state(self, blackboard: DraftBlackboard) -> None:
-        for action in blackboard.action_log:
-            if not action.startswith('Pick'):
-                continue
-            try:
-                after_colon = action.split(': ', 1)[1]
-                owner, rest = after_colon.split(' drafts ', 1)
-                name, pos = rest.rsplit(', ', 1)
-            except ValueError:
-                continue
-
-            self.push('team_pick', (owner, pos, name))  # _add_team_pick handles _owner_teams
-
-            if owner == self.user:
-                self._user_pick_count += 1
-
-        if self._user_pick_count > 0:
-            self.push('undo_enable')
-
-
-def launch_ui(league: str, user: str, draft_type: str='mock draft', simulation: bool=True):
-    saved_dir = 'saved_draft_states'
-    load_screen = LoadScreen(saved_dir, league=league, draft_type=draft_type)
-    load_screen.mainloop()
-
-    load_state = None
-    if load_screen.selected_path is not None:
-        with open(load_screen.selected_path, 'rb') as f:
-            load_state = pickle.load(f)
-
-    league = load_screen.league_var.get()
-    draft_type = load_screen.draft_type_var.get()
-
-    bridge = DraftBridge()
-    app = DraftApp(bridge, league=league, user=user, draft_type=draft_type, simulation=simulation)
-
-    worker = DraftWorker(bridge, app, league=league, user=user, draft_type=draft_type, simulation=simulation)
-
-    thread = threading.Thread(target=worker.run, args=(load_state,), daemon=True)
-    thread.start()
-
-    app.mainloop()
-
-
-
-if __name__ == '__main__':
-    random.seed(SEED)
-    launch_ui(league='Fox Run', user='Alex', draft_type='all select', simulation=False)
+    def hide(self):
+        if self._tip:
+            self._tip.destroy()
+            self._tip = None

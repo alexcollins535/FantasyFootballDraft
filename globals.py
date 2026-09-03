@@ -7,23 +7,23 @@ DEFAULT_OWNERS = ['player1', 'player2', 'player3', 'player4', 'player5', 'player
 DEFAULT_DRAFT_ORDER = None
 
 FOX_RUN_OWNERS = ['Alex', 'Christian', 'Cole', 'Duz', 'Jeff', 'Kev', 'Mas', 'Matt', 'Owen P', 'Owen S', 'Shawn', 'Zach']
-FOX_RUN_DRAFT_ORDER = ['Matt', 'Zach', 'Cole', 'Kev', 'Duz', 'Alex', 'Owen S', 'Owen P', 'Mas', 'Shawn', 'Christian', 'Jeff']
+FOX_RUN_DRAFT_ORDER = ['Matt', 'Zach'  , 'Cole', 'Kev', 'Duz', 'Alex', 'Owen S', 'Owen P', 'Mas', 'Shawn', 'Christian', 'Jeff']
 
 SMITHFIELD_OWNERS = ['Alex', 'Christian', 'Mack', 'Duz', 'JT', 'Nico', 'Erbe', 'Matt', 'Kyle', 'Owen S', 'Ryan', 'Zach']
-SMITHFIELD_DRAFT_ORDER = ['Alex', 'JT', 'Mack', 'Zach', 'Christian', 'Ryan', 'Erbe', 'Matt', 'Nico', 'Duz', 'Owen S', 'Kyle']
+SMITHFIELD_DRAFT_ORDER = ['Alex', 'JT', 'Mack', 'Zach', 'Christian', 'Ryan', 'Duz', 'Kyle', 'Nico', 'Erbe', 'Owen S', 'Matt']
 SMITHFIELD_KEEPERS = {
-    'Alex':         {'NAME': 'Drake Maye', 'ROUND': 12, 'POS': 'QB'},            # Secondary: Quinshon Judkins in 9
-    'Christian':    {'NAME': 'Travis Etienne Jr.', 'ROUND': 8, 'POS': 'RB'},     # Secondary: Bhayshul Tuten in 7
-    'Mack':         {'NAME': 'Drake London', 'ROUND': 2, 'POS': 'WR'},           
-    'Duz':          {'NAME': 'Chris Godwin Jr.', 'ROUND': 9, 'POS': 'WR'},       # Secondary: Rico Dowdle in 12
-    'JT':           {'NAME': 'Colston Loveland', 'ROUND': 9, 'POS': 'TE'},       
-    'Nico':         {'NAME': 'Chris Olave', 'ROUND': 6, 'POS': 'WR'},            # Secondary: Tyler Warren in 7
-    'Erbe':         {'NAME': 'Rashee Rice', 'ROUND': 5, 'POS': 'WR'},            # Secondary: Tetairoa McMillan in 4
-    'Matt':         {'NAME': 'Cam Skattebo', 'ROUND': 10, 'POS': 'RB'},          # Secondary: Javonte Williams in 8
-    'Kyle':         {'NAME': 'Emeka Egbuka', 'ROUND': 6, 'POS': 'WR'},           
-    'Owen S':       {'NAME': 'Rome Odunze', 'ROUND': 6, 'POS': 'WR'},            # Secondary: Harold Fannin Jr. in 8
+    'Alex':         {'NAME': 'Omarion Hampton', 'ROUND': 2, 'POS': 'RB'}, 
+    'Christian':    {'NAME': 'Travis Etienne Jr.', 'ROUND': 8, 'POS': 'RB'}, 
+    'Mack':         {'NAME': 'Lamar Jackson', 'ROUND': 4, 'POS': 'QB'},            
+    'Duz':          {'NAME': 'Jonathan Taylor', 'ROUND': 2, 'POS': 'RB'},
+    'JT':           {'NAME': 'Colston Loveland', 'ROUND': 9, 'POS': 'TE'},    
+    'Nico':         {'NAME': 'Chris Olave', 'ROUND': 6, 'POS': 'WR'}, 
+    'Erbe':         {'NAME': 'Kenneth Walker III', 'ROUND': 3, 'POS': 'RB'},  
+    'Matt':         {'NAME': "Ja'Marr Chase", 'ROUND': 1, 'POS': 'WR'}, 
+    'Kyle':         {'NAME': 'Javonte Williams', 'ROUND': 8, 'POS': 'RB'}, 
+    'Owen S':       {'NAME': 'Harold Fannin Jr.', 'ROUND': 8, 'POS': 'TE'},
     'Ryan':         {'NAME': 'George Pickens', 'ROUND': 4, 'POS': 'WR'},
-    'Zach':         {'NAME': 'Justin Herbert', 'ROUND': 14, 'POS': 'QB'}
+    'Zach':         {'NAME': 'James Cook III', 'ROUND': 2, 'POS': 'RB'}
 }
 
 # Update map upon adding new leagues
@@ -39,15 +39,15 @@ SEED = 7
 RANDOMIZED_SEED = int(time.time())
 
 # Data Preprocessing Globals
-REF_FILEPATH = 'FFL_Reference.xlsx'
+REF_FILEPATH = 'data/FFL_Reference.xlsx'
 POS_RK_SHEET = 'pos_rk'
 OVR_RK_SHEET = 'ovr_rk'
 PAST_DRAFT_SHEET = 'past_draft_by_round'
 DRAFT_BY_TEAM_SHEET = 'ct_draft_by_team'
 ADDITIONAL_DATA_SHEET = 'my_stats'
-PLAYER_DATA_JSON = 'player_data.json'
-DRAFT_DATA_JSON = 'draft_data.json'
-ADDITIONAL_DATA_JSON = 'additional_data.json'
+PLAYER_DATA_JSON = 'data/player_data.json'
+DRAFT_DATA_JSON = 'data/draft_data.json'
+ADDITIONAL_DATA_JSON = 'data/additional_data.json'
 
 # Standard Settings
 POS_LIST = ['QB', 'RB', 'WR', 'TE', 'DEF', 'PK']
@@ -79,5 +79,6 @@ N_SIMULATIONS = 32
 N_WORKERS = 8
 
 # Positional ADP TANH parameters
-K = 5.0
-C = 1.0
+# adp_multiplier = math.exp(math.tanh(adp_gap / K) * C)
+K = 5.0  # dampen the gap within tanh
+C = 1.5  # raise exp amplitude
