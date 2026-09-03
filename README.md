@@ -22,3 +22,30 @@ Then decide on the functionality in main.py. Currently available:
 * run_draft_type() - runs the draft in terminal. Also allows 'random all' where no user picks are made.
 * run_player_counts_by_round_in_simulation() - runs 25 full draft simulations and counts for each player, the number of times they were drafted in each round. Publishes data to csv.
 * run_player_selection_by_pick() - runs 25 full draft simulations and records the picks in order for each draft. Publishes data for each league to csv.
+
+
+## Functionality
+The application is structured as a multi-layered AI system, implemented in LangGraph, built on top of a custom draft engine, combining deterministic modeling, probabilistic simulation, and LLM reasoning into a unified human-in-the-loop recommendation interface.
+
+### Centralized Draft State
+All components in the system operate on a central DraftState: a shared TypedDict that serves as the environment for the agents to act within throughout the draft. It carries the full draft board, pick history, keeper assignments, roster construction per team, pick order, and the outputs of each agent (logical pick, probabilistic pick, LLM pick and reasoning, and the user's final selection). The agent graph, simulation framework, and UI read from and write to this shared state.
+
+### Draft Engine
+The draft engine is responsible for mutating the draft state on behalf of simulated opponents. Its primary operations are updating the player selection odds as picks are made and executing simulated picks. The selection odds factor in the following:
+* Player positional ranking by experts (average rank, standard deviation)
+* Owner positional need (raw values which weight starters more heavily than backups)
+* Owner total by position tendencies (example: player always drafts 2 QBs)
+* League positional tendencies by round (example: league drafts an average of 8 RBs in round 1)
+For player selection, first a position is randomly selected, weighted based on the factors mentioned above. Then a player from that position is randomly selected, based on expert consensus rankings for players at that position.
+
+### Monte Carlo Simulation Framework
+At draft time, the simulation framework runs 32 passes over the time frame up to the user's next pick to estimate player availability at the next pick to inform the current choice. For each player, it produces a likelihood that they will still be available at the next pick.
+
+### Multi-Agent Recommendation System
+Three recommendation agents run in parallel to produce relatively independent (there is naturally similar signal learned from past information in all three agents) recommendations:
+* LogicalDraftAgent: A deterministic, rules-based agent that applies positional scarcity logic and roster construction heuristics, alongside personal player preferences to identify the optimal pick at each step.
+* ProbabilisticDraftAgent: A deterministic, odds-based agent which factors in expert consensus rankings along with owner tendencies to produce the recommendation with the highest odds of being selected in the case of a random pick by the draft engine.
+* Gemini Agent (gemini-2.5-flash): An LLM agent that reasons contextually over the current roster, draft history, and pick position. The available player pool is withheld to keep its signal independent from the probabilistic agent and avoid redundant recommendations.
+
+### Multithreaded Architecture
+The Tkinter UI and the LangGraph agent graph run on separate threads, bridged by two thread-safe queues. A background thread drives opponent picks and triggers agent runs; the UI thread polls for results and updates the display.
