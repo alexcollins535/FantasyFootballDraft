@@ -16,14 +16,6 @@ Update with new league:
 
 Note: if a league is named in main.py which is missing from any of the files, the code falls back to the default settings specified in the spreadsheet and globals.py 
 
-Following data update, run preprocessing.py to create the reference JSON files.
-Then decide on the functionality in main.py. Currently available:
-* launch_ui() - the main functionality, choose either 'select all' as a conventional pick all draft or 'mock draft' to simulate non-user picks. The simulation arg is the choice to run 32 simulations of the picks before the next to determine players who are likely picked before next.
-* run_draft_type() - runs the draft in terminal. Also allows 'random all' where no user picks are made.
-* run_player_counts_by_round_in_simulation() - runs 25 full draft simulations and counts for each player, the number of times they were drafted in each round. Publishes data to csv.
-* run_player_selection_by_pick() - runs 25 full draft simulations and records the picks in order for each draft. Publishes data for each league to csv.
-
-
 ## Functionality
 The application is structured as a multi-layered AI system, implemented in LangGraph, built on top of a custom draft engine, combining deterministic modeling, probabilistic simulation, and LLM reasoning into a unified human-in-the-loop recommendation interface.
 
